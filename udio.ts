@@ -1,4 +1,3 @@
-import axios from "axios";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -33,7 +32,6 @@ interface SamplerOptions {
 }
 
 class Udio {
-
   private API_BASE_URL = "https://www.udio.com/api";
   private authToken0: string;
   private authToken1: string;
@@ -50,11 +48,27 @@ class Udio {
     headers?: any
   ): Promise<any | null> {
     try {
-      const response =
-        method === "POST"
-          ? await axios.post(url, data, { headers })
-          : await axios.get(url, { headers });
-      return response;
+      // set up the request options
+      const options: RequestInit = {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ...headers,
+        },
+      };
+      // add data to the request body if it's a POST request
+      if (method === "POST" && data) {
+        options.body = JSON.stringify(data);
+      }
+      // make the request
+      const response = await fetch(url, options);
+      // check if the response is ok
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      // parse the response as json
+      const result = await response.json();
+      return result;
     } catch (e) {
       console.error(`Error making ${method} request to ${url}: ${e}`);
       return null;
@@ -63,18 +77,15 @@ class Udio {
 
   private getHeaders(getRequest: boolean = false): Record<string, string> {
     const headers: Record<string, string> = {
-      Accept: getRequest
+      accept: getRequest
         ? "application/json, text/plain, */*"
         : "application/json",
-      "Content-Type": "application/json",
-      Cookie: `sb-ssr-production-auth-token.0=${this.authToken0}; sb-ssr-production-auth-token.1=${this.authToken1}`,
-      Origin: "https://www.udio.com",
+      "accept-language": "en-US,en;q=0.9",
+      "content-type": "application/json",
+      priority: "u=1, i",
+      cookie: `sb-ssr-production-auth-token.0=${this.authToken0}; sb-ssr-production-auth-token.1=${this.authToken1}`,
       Referer: "https://www.udio.com/create",
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-      "Sec-Fetch-Site": "same-origin",
-      "Sec-Fetch-Mode": "cors",
-      "Sec-Fetch-Dest": "empty",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
     };
     if (!getRequest) {
       headers["sec-ch-ua"] =
@@ -82,17 +93,21 @@ class Udio {
       headers["sec-ch-ua-mobile"] = "?0";
       headers["sec-ch-ua-platform"] = '"macOS"';
       headers["sec-fetch-dest"] = "empty";
+      headers["sec-fetch-mode"] = "cors";
+      headers["sec-fetch-site"] = "same-origin";
+      headers["sec-gpc"] = "1";
     }
     return headers;
   }
-  
+
+  // generate a new song
   async generateSong(
-    prompt: string, 
-    seed: number, 
+    prompt: string,
+    seed: number,
     use2MinModel?: boolean,
     customLyrics?: string
   ): Promise<GenerateResponse> {
-    const body = JSON.stringify({
+    const body = {
       lyricInput: customLyrics ? customLyrics : "",
       prompt,
       samplerOptions: {
@@ -106,32 +121,18 @@ class Udio {
         audio_conditioning_length_seconds: 130,
         use_2min_model: use2MinModel ? use2MinModel : false,
       },
-    });
-
-    const request = await fetch(`${this.API_BASE_URL}/generate-proxy`, {
-      headers: {
-        accept: "application/json, text/plain, */*",
-        "accept-language": "en-US,en;q=0.9",
-        "content-type": "application/json",
-        priority: "u=1, i",
-        "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Brave";v="126"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Linux"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        "sec-gpc": "1",
-        cookie: `sb-ssr-production-auth-token.0=${this.authToken0}; sb-ssr-production-auth-token.1=${this.authToken1}`,
-        Referer: "https://www.udio.com/create",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-      },
+    };
+    const headers = this.getHeaders();
+    const response = await this.makeRequest(
+      `${this.API_BASE_URL}/generate-proxy`,
+      "POST",
       body,
-      method: "POST",
-    });
-    const response = await request.json();
+      headers
+    );
     return response;
   }
 
+  // generate an extension of a given song
   async generateExtension(
     prompt: string,
     seed: number,
@@ -139,55 +140,42 @@ class Udio {
     audioConditioningSongId?: string,
     customLyrics?: string
   ): Promise<GenerateResponse> {
-    const body = JSON.stringify({
+    const body = {
       prompt,
       lyricInput: customLyrics ? customLyrics : "",
       samplerOptions: {
         seed,
+        bypass_prompt_optimization: true,
         audio_conditioning_path: audioConditioningPath,
         audio_conditioning_song_id: audioConditioningSongId,
         audio_conditioning_type: "continuation",
       },
-    });
-
-    const request = await fetch(`${this.API_BASE_URL}/generate-proxy`, {
-      headers: {
-        accept: "application/json, text/plain, */*",
-        "accept-language": "en-US,en;q=0.9",
-        "content-type": "application/json",
-        priority: "u=1, i",
-        "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Brave";v="126"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Linux"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        "sec-gpc": "1",
-        cookie: `sb-ssr-production-auth-token.0=${this.authToken0}; sb-ssr-production-auth-token.1=${this.authToken1}`,
-        Origin: "https://www.udio.com",
-        Referer: "https://www.udio.com/create",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-      },
+    };
+    const headers = this.getHeaders();
+    const response = await this.makeRequest(
+      `${this.API_BASE_URL}/generate-proxy`,
+      "POST",
       body,
-      method: "POST",
-    });
-    const response = await request.json();
+      headers
+    );
     return response;
   }
 
+  // check the status of the song to see if it's done
   async checkSongStatus(songIds: string[]): Promise<StatusResponse | null> {
     const url = `${this.API_BASE_URL}/songs?songIds=${songIds.join(",")}`;
     const headers = this.getHeaders(true);
     const response = await this.makeRequest(url, "GET", null, headers);
     if (response) {
-      const data = response.data;
-      const allFinished = data.songs.every((song: SongResult) => song.finished);
-      return { all_finished: allFinished, data };
+      const songs = response.songs;
+      const allFinished = songs.every((song: SongResult) => song.finished);
+      return { all_finished: allFinished, data: { songs } };
     } else {
       return null;
     }
   }
 
+  // repeatedly check the status of the song until it's done
   async processSongs(
     trackIds: string[],
     folder: string
@@ -222,10 +210,9 @@ class Udio {
     }
     const filePath = path.join(folder, `${songTitle}.mp3`);
     try {
-      const response = await axios.get(songUrl, {
-        responseType: "arraybuffer",
-      });
-      fs.writeFileSync(filePath, response.data);
+      const response = await fetch(songUrl);
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(filePath, Buffer.from(buffer));
       console.log(`Downloaded ${songTitle} with url ${songUrl} to ${filePath}`);
     } catch (e) {
       console.error(`Failed to download the song. Error: ${e}`);

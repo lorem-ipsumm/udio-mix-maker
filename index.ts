@@ -37,13 +37,14 @@ const generateMix = async (maxLoops: number = 10) => {
         return;
       }
       // get a new prompt
-      prompt = getPrompt() + " remix";
+      prompt = "remix " + getPrompt();
       // take the first song and generate an extension
       result = await wrapper.generateExtension(
         prompt,
         -1,
         processedSongs[0].song_path,
-        processedSongs[0].id
+        processedSongs[0].id,
+        "[Instrumental]\n[Remix]"
       );
       await sleep(10000);
     } catch (e) {
