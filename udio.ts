@@ -31,6 +31,20 @@ interface SamplerOptions {
   use_2min_model: boolean;
 }
 
+interface GenerateExtensionParams {
+  prompt: string;
+  extensionSourceId: string;
+  seed?: number;
+  customLyrics?: string;
+  isOutro?: boolean;
+}
+
+interface GenerateSongParams {
+  prompt: string;
+  seed?: number;
+  customLyrics?: string;
+}
+
 class Udio {
   private API_BASE_URL = "https://www.udio.com/api";
   private authToken0: string;
@@ -44,35 +58,53 @@ class Udio {
   private async makeRequest(
     url: string,
     method: "GET" | "POST",
-    data?: any,
+    genParams?: any,
     headers?: any
   ): Promise<any | null> {
-    try {
-      // set up the request options
-      const options: RequestInit = {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          ...headers,
-        },
-      };
-      // add data to the request body if it's a POST request
-      if (method === "POST" && data) {
-        options.body = JSON.stringify(data);
+    let retries = 0;
+    let maxRetries = 3;
+    while (retries <= maxRetries) {
+      try {
+        // set up the request options
+        const options: RequestInit = {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            ...headers,
+          },
+        };
+        // add data to the request body if it's a POST request
+        if (method === "POST" && genParams) {
+          const params = {
+            ...genParams,
+            model_type: "udio32-v1.5"
+          }
+          options.body = JSON.stringify({
+            gen_params: params,
+          });
+        }
+        // make the request
+        const response = await fetch(url, options);
+        // check if the response is ok
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        // parse the response as json
+        const result = await response.json();
+        return result;
+      } catch (e) {
+        console.log(e);
+        retries++;
+        if (retries > maxRetries) {
+          console.error(`Error making ${method} request to ${url}: ${e}`);
+          return null;
+        }
+        console.warn(`Request failed, retrying (${retries}/${maxRetries})...`);
+        // Wait for a short time before retrying (you can adjust this as needed)
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      // make the request
-      const response = await fetch(url, options);
-      // check if the response is ok
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      // parse the response as json
-      const result = await response.json();
-      return result;
-    } catch (e) {
-      console.error(`Error making ${method} request to ${url}: ${e}`);
-      return null;
     }
+    return null;
   }
 
   private getHeaders(getRequest: boolean = false): Record<string, string> {
@@ -101,61 +133,71 @@ class Udio {
   }
 
   // generate a new song
-  async generateSong(
-    prompt: string,
-    seed: number,
-    use2MinModel?: boolean,
-    customLyrics?: string
-  ): Promise<GenerateResponse> {
-    const body = {
-      lyricInput: customLyrics ? customLyrics : "",
+  async generateSong({
+    prompt,
+    seed = -1,
+    customLyrics = ""
+  }: GenerateSongParams): Promise<GenerateResponse> {
+    const genParams = {
+      lyrics: customLyrics ? customLyrics : "",
+      lyrics_type: customLyrics ? "" : "instrumental",
       prompt,
-      samplerOptions: {
-        bypass_prompt_optimization: true,
-        seed,
-        crop_start_time: 0.4,
-        prompt_strength: 0.5,
-        clarity_strength: 0.25,
-        lyrics_strength: 0.5,
-        generation_quality: 0.75,
-        audio_conditioning_length_seconds: 130,
-        use_2min_model: use2MinModel ? use2MinModel : false,
-      },
+      bypass_prompt_optimization: true,
+      seed,
+      song_section_start: 0.4,
+      prompt_strength: 0.5,
+      clarity_strength: 0.25,
+      lyrics_strength: 0.5,
+      generation_quality: 0.75,
+      audio_conditioning_length_seconds: 130,
+      // use_2min_model: use2MinModel ? use2MinModel : false,
+      config: {
+        mode: "regular"
+      }
     };
     const headers = this.getHeaders();
     const response = await this.makeRequest(
       `${this.API_BASE_URL}/generate-proxy`,
       "POST",
-      body,
+      genParams,
       headers
     );
     return response;
   }
 
   // generate an extension of a given song
-  async generateExtension(
-    prompt: string,
-    seed: number,
-    audioConditioningPath?: string,
-    audioConditioningSongId?: string,
-    customLyrics?: string
-  ): Promise<GenerateResponse> {
-    const body = {
+  async generateExtension({
+    prompt,
+    extensionSourceId,
+    seed = -1,
+    customLyrics = "",
+    isOutro = false
+  }: GenerateExtensionParams): Promise<GenerateResponse> {
+    const genParams = {
       prompt,
-      lyricInput: customLyrics ? customLyrics : "",
-      samplerOptions: {
-        seed,
-        bypass_prompt_optimization: true,
-        audio_conditioning_path: audioConditioningPath,
-        audio_conditioning_song_id: audioConditioningSongId,
-        audio_conditioning_type: "continuation",
-      },
+      lyrics: customLyrics ? customLyrics : "",
+      lyrics_type: customLyrics ? "" : "instrumental",
+      bypass_prompt_optimization: true,
+      song_section_start: isOutro ? 0.9 : 0.4,
+      prompt_strength: 0.5,
+      clarity_strength: 0.25,
+      lyrics_strength: 0.5,
+      generation_quality: 0.75,
+      seed,
+      config: {
+        mode: "continuation",
+        context_length: 130,
+        source: {
+          song_id: extensionSourceId,
+          source_type: "song",
+        }
+      }
     };
     const headers = this.getHeaders();
     const response = await this.makeRequest(
       `${this.API_BASE_URL}/generate-proxy`,
       "POST",
-      body,
+      genParams,
       headers
     );
     return response;
